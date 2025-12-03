@@ -4,6 +4,7 @@ from aws_cdk import (
     aws_s3 as s3,  # S3 bucket
     aws_dynamodb as dynamodb,  # DynamoDB table
     aws_lambda as _lambda,  # Lambda function, distinguished from python lambda keyword by underscore
+    aws_iam as iam,  # IAM for permissions
     Duration,  # time duration
     aws_s3_notifications as s3n,  # S3 notifications (to trigger Lambda on S3 events)
 )
@@ -34,11 +35,12 @@ class DocuflowStack(Stack):  # define stack for Docuflow application
                 name="file_id",
                 type=dynamodb.AttributeType.STRING,  # every document has a unique file_id
             ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,  # pay only for what you use, no need to pre-provision read/write capacity
             removal_policy=RemovalPolicy.DESTROY,  # for development purposes. In production, consider using RETAIN.
         )
 
-        # Add GSI(Global Secondary Index) for Category Search （全局二级索引�?        # This index allows querying documents based on their category attribute.
+        # Add GSI(Global Secondary Index) for Category Search （全局二级索引）
+        # This index allows querying documents based on their category attribute.
         table.add_global_secondary_index(
             index_name="category-index",
             partition_key=dynamodb.Attribute(
@@ -82,3 +84,11 @@ class DocuflowStack(Stack):  # define stack for Docuflow application
         table.grant_read_write_data(
             process_doc_lambda
         )  # grant read and write permissions on DynamoDB table
+
+        # Grant Bedrock permissions
+        process_doc_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel"],
+                resources=["*"],  # For development, allow all models
+            )
+        )
