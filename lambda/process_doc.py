@@ -39,12 +39,45 @@ def clean_reference(text):
     Regex to find common reference patterns and truncate text after them.
     """
     match = re.search(
-        r"\n\s*(?:References?|Bibliography|Citations?)\s*:\s*", text, re.IGNORECASE
+        r"\n\s*(?:References?|Bibliography|Citations?|Appendix(?:es)?)\s*(?::|\n)",
+        text,
+        re.IGNORECASE,
     )  # Match common reference section headers
     if match:
         print("Found reference section, truncating text...")
         return text[: match.start()]
     return text
+
+
+def extract_sections_by_keywords(text):
+    """
+    Try to extract specific high-value sections (Abstract, Intro, Conclusion) based on keywords.
+    Returns the combined extracted text if successful, or None if not enough content found.
+    """
+    # Define the sections we are interested in
+    # Format: (SectionName, MaxLength)
+    targets = [
+        (r"(?:Abstract|Executive Summary)", 1500),
+        (r"(?:Introduction|Background)", 2000),
+        (r"(?:Conclusion|Future Work|Summary)", 1500),
+    ]
+
+    extracted_parts = []
+
+    for pattern, max_len in targets:
+        # Find the section header, requiring it to be on a new line or followed by a colon
+        match = re.search(rf"\n\s*{pattern}\s*(?::|\n)", text, re.IGNORECASE)
+        if match:
+            start_idx = match.end()
+            # Extract content after the header
+            content = text[start_idx : start_idx + max_len]
+            extracted_parts.append(f"--- {pattern} ---\n{content}...\n")
+
+    # If too little content was extracted (e.g., no headers found), return None to fallback
+    if not extracted_parts:
+        return None
+
+    return "\n".join(extracted_parts)
 
 
 def extract_text_smartly(pdf_path, head=4, tail=5):
@@ -173,7 +206,7 @@ def save_metadata_to_DDB(file_id, original_file_name, s3_key, ai_result):
         "s3_key": s3_key,
         "upload_timestamp": datetime.datetime.utcnow().isoformat(),  # ISO 8601 format
         "status": final_status,  # AUTO_TAGGED, NEEDS_REVIEW, etc.
-        "ai_summary": ai_result,  # Store full AI result for reference
+        "ai_summary": ai_result,  # Store full AI result for reference (json dict concluding status, summary, tags, category)
         "user_notes": "",  # Placeholder for user notes
         "is_verified": False,  # Placeholder for verification status
     }
@@ -219,10 +252,21 @@ def handler(event, context):
         print("Starting Round 1: Standard scan (Head4 + Tail5)")
         text = extract_text_smartly(local_file_path, head=4, tail=5)
 
-        ai_result = None
-        if not text or len(text) < 100:
+        # 3.1 Try Semantic Extraction (Keyword-based)
+        # If we can find Abstract/Intro/Conclusion, use that instead of the full text to save tokens.
+        semantic_text = extract_sections_by_keywords(text)
+        if semantic_text and len(semantic_text) > 600:
+            print("Semantic extraction successful! Using optimized text.")
+            text = semantic_text
+        else:
+            print("Semantic extraction failed or too short. Using full Head+Tail text.")
+
+        ai_result = None  # placeholder for AI result
+        if not text or len(text) < 100:  # too little text extracted
             print("Insufficient text extracted in Round 1.")
-            ai_result = {"status": "INSUFFICIENT_DATA"}
+            ai_result = {
+                "status": "INSUFFICIENT_DATA"
+            }  # dict indicating insufficient data
         else:
             ai_result = ask_bedrock_model(text)
             if ai_result.get("status") == "INSUFFICIENT_DATA":
@@ -234,7 +278,7 @@ def handler(event, context):
             text_deep = extract_text_smartly(local_file_path, head=20, tail=20)
             if text_deep and len(text_deep) > len(text) + 500:
                 ai_result = ask_bedrock_model(text_deep)
-                ai_result["retry_performed"] = True
+                ai_result["retry_performed"] = True  # mark that we did a retry
             else:
                 print("Deep scan did not yield significantly more text.")
 
