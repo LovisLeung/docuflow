@@ -4,6 +4,7 @@ import boto3  # AWS SDK for Python
 import os
 import re  # Regular expressions
 import datetime
+import uuid  # For generating unique file IDs
 from pypdf import PdfReader  # PDF processing library
 
 #  init clients
@@ -204,7 +205,7 @@ def save_metadata_to_DDB(file_id, original_file_name, s3_key, ai_result):
         "file_id": file_id,
         "original_file_name": original_file_name,
         "s3_key": s3_key,
-        "upload_timestamp": datetime.datetime.utcnow().isoformat(),  # ISO 8601 format
+        "upload_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),  # ISO 8601 format
         "status": final_status,  # AUTO_TAGGED, NEEDS_REVIEW, etc.
         "ai_summary": ai_result,  # Store full AI result for reference (json dict concluding status, summary, tags, category)
         "user_notes": "",  # Placeholder for user notes
@@ -283,8 +284,10 @@ def handler(event, context):
                 print("Deep scan did not yield significantly more text.")
 
         # 5. Save metadata to DynamoDB
+        # Generate a unique file_id using UUIDv4. This ensures stability even if the file is renamed or moved.
+        file_id = str(uuid.uuid4())
         save_metadata_to_DDB(
-            file_id=key,  # Use the file name as file_id
+            file_id=file_id,
             original_file_name=os.path.basename(key),
             s3_key=key,  # S3 object key
             ai_result=ai_result,

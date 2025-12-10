@@ -18,34 +18,46 @@
 ### Phase 1: The Backend (Ingestion Pipeline)
 **核心思想：** Serverless 事件驱动，算力前置。
 1. **Trigger:** File uploaded to S3 Bucket (`/inbox/`) -> Triggers Lambda.
-2. **Smart Extraction:**
-    Strategy: "3+2 Truncation" (前 3 页 + 后 2 页)。
-    Logic: 仅提取 PDF 的头尾关键信息（Title, Abstract, Conclusion），放弃中间的公式推导和实验数据，将 Token 消耗控制在 3k 以内。
-    Fallback: 如果提取内容过少（<100字），标记为 NEEDS_REVIEW，不强行分类。
+2. **Smart Extraction (Cost-Optimized):**
+    *   **Strategy A (Semantic):** 优先尝试提取 `Abstract`, `Introduction`, `Conclusion` 等高价值段落。如果提取内容充足 (>600 chars)，直接用于分析，极大节省 Token。
+    *   **Strategy B (Positional):** 如果语义提取失败，回退到 "Head-4 Tail-5" 策略（前 4 页 + 后 5 页），确保覆盖开头和结尾。
+    *   **Logic:** 自动剔除 References 和 Appendix，减少噪音。
+    *   **Fallback:** 如果提取内容过少（<100字），标记为 `INSUFFICIENT_DATA`。
 3. **Intelligence (Brain):**
-    Model: Amazon Bedrock -> Claude 3 Haiku (速度快，成本极低)。
-    Prompt Logic: 要求 AI 输出严格的 JSON，包含：
-        summary: 一句话核心贡献。
-        category: 基于预定义列表（CS, Bio, Physics...）+ AI 智能推断的路径。
-        tags: 提取 3-5 个语义标签。
+    *   **Model:** Amazon Bedrock -> Claude 3 Haiku (速度快，成本极低)。
+    *   **Prompt Logic:** 要求 AI 扮演研究馆员，输出严格的 JSON，包含：
+        *   `summary`: 一句话核心贡献。
+        *   `category`: 基于预定义列表（CS, Bio, Physics...）+ AI 智能推断的路径。
+        *   `tags`: 提取 3-5 个语义标签。
+    *   **Embedding (Vectorization):**
+        *   **Model:** Amazon Titan Embeddings v2。
+        *   **Input:** 拼接 `Title + Summary + Tags`。
+        *   **Output:** 1024维向量，存入 DynamoDB，用于后续的语义检索。
+
 4. **Persistence (Memory):**
-    Database: DynamoDB (On-Demand Mode)。
-    State Lock: 写入前检查 file_id，防止 S3 事件重试导致的重复计费。
+    *   **Database:** DynamoDB (On-Demand Mode)。
+    *   **State Lock:** 写入前检查 file_id，防止 S3 事件重试导致的重复计费。
+
 5. **Action (Routing):**
-    调用 S3 API 将物理文件移动到 /processed/{Category}/{SubCategory}/。
+    *   调用 S3 API 将物理文件移动到 `/processed/{Category}/{SubCategory}/`。
 
 ### Phase 2: The Frontend (Interaction)
-* **Stack:**
-    Streamlit (Python)。
-* **Search Logic:**
-    用户输入查询词 -> 前端（可选）进行关键词提取 -> 在 DynamoDB 的 summary 和 tags 字段中进行 Contains 查询。
-    利用 AI 预生成的“高质量摘要”来实现比全文检索更准的“语义级”搜索。
+* **Stack:** Streamlit (Python)。
+* **Search Logic (Dual Mode):**
+    *   **Mode A: Traditional Search (Keyword):**
+        *   用户选择“精确搜索”模式。
+        *   基于 DynamoDB 的 `FilterExpression` 或内存中的 Pandas 过滤。
+        *   场景：已知文件名、特定标签（如 `#Transformer`）或作者。
+    *   **Mode B: Natural Language Search (Semantic/RAG):**
+        *   用户选择“AI 语义搜索”模式。
+        *   输入自然语言（如“找一篇关于注意力机制的论文”）。
+        *   流程：调用 Titan 生成查询向量 -> 计算余弦相似度 -> 返回 Top-K 结果。
+    *   **Implementation:** 利用 Streamlit 的内存缓存机制加载 DynamoDB 数据，避免昂贵的向量数据库成本（适合 <10k 文档规模）。
 
 ## 4. Data Schema (DynamoDB)
 **Table Name:** `DocuMetaTable`
 **PartitionKey:** `file_id` (UUIDv4) - 确保全局唯一
-GSI (Index): category-index (用于侧边栏导航)
-
+**GSI (Index):** `category-index` (用于侧边栏导航)
 
 ```json
 {
@@ -53,25 +65,30 @@ GSI (Index): category-index (用于侧边栏导航)
   "original_name": "Attention_is_all_you_need.pdf",
   "s3_key": "processed/ComputerScience/NLP/Attention.pdf",
   "upload_timestamp": "2023-10-27T10:00:00Z",
-  "status": "COMPLETED", // UPLOADED | PROCESSING | COMPLETED | ERROR
+  "status": "AUTO_TAGGED", // UPLOADED | PROCESSING | AUTO_TAGGED | NEEDS_REVIEW | ERROR
+  "is_verified": false,    // 人工审核状态
   
   // --- The Soul (AI 生成的元数据) ---
   "ai_analysis": {
       "summary": "Proposes the Transformer model, replacing RNNs with self-attention mechanisms.",
       "category_path": "ComputerScience/NLP",
-      "ai_tags": ["#Transformer", "#GoogleBrain", "#SOTA"],
-      "user_tags": ["#ThesisReference"], // 用户手动补充的标签
+      "tags": ["#Transformer", "#GoogleBrain", "#SOTA"],
       "confidence_score": 0.98
-  }
+  },
+  "embedding": [0.123, -0.456, ...], // 1024-dim vector (Titan v2)
+  "user_notes": "" // 用户手动备注
 }
 ```
 
 ## 5. Cost Control (防破产风控)
 1. **Hard Limit:** $5.00/month Budget.
 2. **Model:** Haiku Only.
-3. **Circuit Breaker:**
-    Lambda 仅响应 `/inbox`。
-    处理完立即移走文件，防止死循环。
-4. **Security:**
-    Streamlit 前端通过 S3 Presigned URL 获取文件下载链接（时效性链接），不直接暴露 Bucket。
+3. **Token Optimization:** 
+    *   优先使用语义提取（Semantic Extraction），仅发送几百个 Token 给 AI。
+    *   正则过滤参考文献（References）和附录（Appendix）。
+4. **Circuit Breaker:**
+    Lambda 仅响应 `/inbox`。处理完立即移走文件，防止死循环。
 
+
+## 7. LOGO
+这个项目的痛点是解决习惯大量囤积文件的人群，而会这样做的这种人（学生 程序员 科研工作者等）基本都有仓鼠病，未来设计仓鼠形象。

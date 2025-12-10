@@ -1,58 +1,51 @@
+# DocuFlow
 
-# Welcome to your CDK Python project!
+**Turn your "dead" PDFs into "living" knowledge.**
 
-This is a blank project for CDK development with Python.
+DocuFlow is an intelligent document management system powered by **AWS Serverless** and **Generative AI (Claude 3)**. It automatically ingests, analyzes, tags, and categorizes your academic papers and technical documents.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Key Features
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+*   **Smart Ingestion**: Drag & drop PDF upload.
+*   **AI Analysis**: Automatically extracts summaries, semantic tags, and categories using **Amazon Bedrock (Claude 3 Haiku)**.
+*   **Cost-Optimized**: Uses a "Semantic Extraction" strategy to minimize token usage (Head/Tail + Keyword Targeting).
+*   **Serverless Architecture**: Built on AWS Lambda, S3, and DynamoDB for zero-maintenance scalability.
 
-To manually create a virtualenv on MacOS and Linux:
+## Architecture
 
-```
-$ python -m venv .venv
-```
+1.  **Upload**: User uploads PDF to S3 Bucket (`/inbox`).
+2.  **Trigger**: S3 event triggers a Python Lambda function.
+3.  **Process**:
+    *   Lambda extracts text (Smart Head/Tail + Semantic Chunking).
+    *   Calls **Claude 3 Haiku** to analyze content.
+4.  **Store**: Metadata saved to **DynamoDB**; File moved to structured S3 paths.
+5.  **UI**: (Coming Soon) Streamlit frontend for search and visualization.
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+## Deployment (Dev Guide)
 
-```
-$ source .venv/bin/activate
-```
+### Prerequisites
+*   AWS CLI configured
+*   Node.js & NPM (for CDK)
+*   Python 3.12+
+*   Docker (optional, for Lambda bundling)
 
-If you are a Windows platform, you would activate the virtualenv like this:
+### Setup
 
-```
-% .venv\Scripts\activate.bat
-```
+1.  **Clone & Install Dependencies**
+    ```bash
+    git clone https://github.com/LovisLeung/docuflow.git
+    cd docuflow
+    python -m venv .venv
+    .venv\Scripts\activate
+    pip install -r requirements.txt
+    ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+2.  **Deploy Infrastructure**
+    ```bash
+    cdk bootstrap  # Run once per region
+    cdk deploy
+    ```
 
-```
-$ pip install -r requirements.txt
-```
+## License
 
-At this point you can now synthesize the CloudFormation template for this code.
-
-```
-$ cdk synth
-```
-
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
-
-## Useful commands
-
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
-
-Enjoy!
+MIT
