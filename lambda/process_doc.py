@@ -205,7 +205,9 @@ def save_metadata_to_DDB(file_id, original_file_name, s3_key, ai_result):
         "file_id": file_id,
         "original_file_name": original_file_name,
         "s3_key": s3_key,
-        "upload_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),  # ISO 8601 format
+        "upload_timestamp": datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat(),  # ISO 8601 format
         "status": final_status,  # AUTO_TAGGED, NEEDS_REVIEW, etc.
         "ai_summary": ai_result,  # Store full AI result for reference (json dict concluding status, summary, tags, category)
         "user_notes": "",  # Placeholder for user notes
@@ -284,8 +286,22 @@ def handler(event, context):
                 print("Deep scan did not yield significantly more text.")
 
         # 5. Save metadata to DynamoDB
-        # Generate a unique file_id using UUIDv4. This ensures stability even if the file is renamed or moved.
-        file_id = str(uuid.uuid4())
+        # Extract UUID from S3 key (Format: uploads/UUID_Filename.pdf)
+        # If extraction fails (e.g. manual upload without UUID), fallback to generating a new one.
+        try:
+            # key example: "uploads/123e4567-e89b-12d3-a456-426614174000_paper.pdf"
+            filename = os.path.basename(key)
+            if "_" in filename:
+                # Split by the first underscore
+                file_id = filename.split("_", 1)[0]
+                # Validate if it looks like a UUID (simple length check or try-except)
+                uuid.UUID(file_id)  # This will raise ValueError if not a valid UUID
+            else:
+                raise ValueError("No UUID found in filename")
+        except Exception:
+            print("Could not extract UUID from filename, generating a new one.")
+            file_id = str(uuid.uuid4())
+
         save_metadata_to_DDB(
             file_id=file_id,
             original_file_name=os.path.basename(key),
