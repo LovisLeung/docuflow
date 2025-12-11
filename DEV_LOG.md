@@ -85,3 +85,30 @@
     1. **Pre-defined Taxonomy:** Force AI to choose from a fixed list of categories (e.g., arXiv categories).
     2. **Semantic Deduplication:** Use embeddings to merge similar tags in the background.
     3. **Frontend Autocomplete:** When users manually edit tags, suggest existing tags from the database to encourage consistency.
+
+## 2025-12-11: Frontend Implementation - Review & Verify Workflow
+**Phase Target:** Complete "Human-in-the-loop" Review System
+- **Frontend (Streamlit):**
+  - Implemented `3_Review.py` page for manual verification of AI-generated metadata.
+  - Features: File list view (Pandas), Metadata Editor (Form), Delete functionality.
+  - **UX:** Added dropdown for file selection and status indicators.
+- **Backend Utilities:**
+  - **Database (`db.py`):**
+    - Fixed critical indentation bug in `update_file_metadata`.
+    - Refactored `get_file_details` to decouple logic from DB calls.
+    - Implemented `delete_file` with cascading deletion (S3 + DynamoDB).
+  - **Embedding (`embedding.py`):**
+    - Integrated Amazon Titan Embeddings v2 (`amazon.titan-embed-text-v2:0`).
+    - Implemented `float` to `Decimal` conversion to fix DynamoDB compatibility issues.
+- **Lambda (`process_doc.py`):**
+  - Updated regex to exclude "Acknowledgements" sections to reduce noise.
+
+**Key Decisions:**
+- **Embedding Strategy:** Moved embedding generation from Lambda (Ingestion) to Frontend (Review).
+  - *Reasoning:* Avoid generating embeddings for "dirty" AI drafts. Only generate vectors for human-verified content to ensure search quality and save costs.
+- **Tag Handling:** Decided to keep `#` in tags (e.g., `#AI`) to preserve semantic meaning for embedding models.
+- **Deletion Logic:** Implemented strict "S3 First, DB Second" deletion order to prevent orphaned files (zombie data).
+
+**Next Steps:**
+- Implement Search Page (`4_Search.py`) using the generated embeddings.
+- Add PDF Preview functionality (requires frontend refactor).

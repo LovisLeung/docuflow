@@ -40,7 +40,7 @@ def clean_reference(text):
     Regex to find common reference patterns and truncate text after them.
     """
     match = re.search(
-        r"\n\s*(?:References?|Bibliography|Citations?|Appendix(?:es)?)\s*(?::|\n)",
+        r"\n\s*(?:References?|Bibliography|Citations?|Appendix(?:es)?|Acknowledgements?)\s*(?::|\n)",
         text,
         re.IGNORECASE,
     )  # Match common reference section headers
