@@ -79,3 +79,9 @@
 **Pending Issues / Technical Debt:**
 - **S3 File Overwrite Risk:** Currently, if two files with the same name are uploaded, S3 will overwrite the content, but DynamoDB will generate two different `file_id`s pointing to the same `s3_key`.
   - **Planned Fix:** In the Frontend Upload phase (`2_Upload.py`), generate the UUID *before* uploading to S3, and use the UUID as the S3 object key (e.g., `uploads/{uuid}.pdf` or `uploads/{uuid}_{filename}.pdf`). This ensures S3 keys are immutable and unique.
+
+- **AI Tag/Category Explosion:** Without constraints, the AI might generate semantically identical but syntactically different tags (e.g., "AI" vs "Artificial Intelligence", "CS" vs "Computer Science"). This leads to a fragmented knowledge base ("Tag Hell").
+  - **Potential Solutions:**
+    1. **Pre-defined Taxonomy:** Force AI to choose from a fixed list of categories (e.g., arXiv categories).
+    2. **Semantic Deduplication:** Use embeddings to merge similar tags in the background.
+    3. **Frontend Autocomplete:** When users manually edit tags, suggest existing tags from the database to encourage consistency.

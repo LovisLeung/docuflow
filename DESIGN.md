@@ -43,6 +43,8 @@
 
 ### Phase 2: The Frontend (Interaction)
 * **Stack:** Streamlit (Python)。
+* **Future Roadmap (React Migration):**
+    *   [TODO] Implement PDF Preview feature (requires frontend refactor).
 * **Search Logic (Dual Mode):**
     *   **Mode A: Traditional Search (Keyword):**
         *   用户选择“精确搜索”模式。

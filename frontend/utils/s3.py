@@ -16,7 +16,8 @@ def get_bucket_name_by_prefix(prefix="DocuDocs"):
         response = s3.list_buckets()  # list all buckets
         for bucket in response.get("Buckets", []):
             bucket_name = bucket.get("Name", "")
-            if prefix in bucket_name:
+            # Fix: S3 bucket names are always lowercase, so we should compare case-insensitively
+            if prefix.lower() in bucket_name.lower():
                 return bucket_name
         return None
     except ClientError as e:
@@ -39,4 +40,19 @@ def upload_file_to_s3(file_object, object_name):
         return True
     except ClientError as e:
         st.error(f"Failed to upload file to S3: {e}")
+        return False
+
+
+def delete_file_from_s3(object_key):
+    """Delete a file from the S3 bucket."""
+    bucket_name = get_bucket_name_by_prefix()
+    if not bucket_name:
+        return False
+
+    s3 = get_s3_client()
+    try:
+        s3.delete_object(Bucket=bucket_name, Key=object_key)
+        return True
+    except ClientError as e:
+        st.error(f"Failed to delete file from S3: {e}")
         return False
